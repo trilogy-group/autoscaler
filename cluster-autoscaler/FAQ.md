@@ -589,7 +589,7 @@ new nodes will be added.
 Expanders can be selected by passing the name to the `--expander` flag, i.e.
 `./cluster-autoscaler --expander=random`.
 
-Currently Cluster Autoscaler has 4 expanders:
+Currently Cluster Autoscaler has 5 expanders:
 
 * `random` - this is the default expander, and should be used when you don't have a particular
 need for the node groups to scale differently.
@@ -606,7 +606,9 @@ after scale-up. This is useful when you have different classes of nodes, for exa
 would match the cluster size. This expander is described in more details
 [HERE](https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/proposals/pricing.md). Currently it works only for GCE and GKE (patches welcome.)
 
-************
+* `priority` - selects the node group that has the highest priority assigned by the user. It's configuration is described in more details [here](expander/priority/readme.md)
+
+****************
 
 ### What are the parameters to CA?
 
