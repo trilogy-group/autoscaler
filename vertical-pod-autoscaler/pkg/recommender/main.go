@@ -66,9 +66,14 @@ func main() {
 	if useCheckpoints {
 		recommender.GetClusterStateFeeder().InitFromCheckpoints()
 	} else {
+		historyDuration, err := time.ParseDuration(*historyLength)
+		if err != nil {
+			klog.Errorf("History length is not a golang parsable duration: %s - use 8h", err)
+			historyDuration = time.Duration(8 * time.Hour)
+		}
 		config := history.PrometheusHistoryProviderConfig{
 			Address:                *prometheusAddress,
-			HistoryLength:          *historyLength,
+			HistoryLength:          historyDuration,
 			PodLabelPrefix:         *podLabelPrefix,
 			PodLabelsMetricName:    *podLabelsMetricName,
 			PodNamespaceLabel:      *podNamespaceLabel,

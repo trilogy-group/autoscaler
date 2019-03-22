@@ -29,11 +29,12 @@ import (
 // PrometheusHistoryProviderConfig allow to select which metrics
 // should be queried to get real resource utilization.
 type PrometheusHistoryProviderConfig struct {
-	Address                                            string
-	HistoryLength, PodLabelPrefix, PodLabelsMetricName string
-	PodNamespaceLabel, PodNameLabel                    string
-	CtrNamespaceLabel, CtrPodNameLabel, CtrNameLabel   string
-	CadvisorMetricsJobName                             string
+	Address                                          string
+	HistoryLength                                    time.Duration
+	PodLabelPrefix, PodLabelsMetricName              string
+	PodNamespaceLabel, PodNameLabel                  string
+	CtrNamespaceLabel, CtrPodNameLabel, CtrNameLabel string
+	CadvisorMetricsJobName                           string
 }
 
 // PodHistory represents history of usage and labels for a given pod.
@@ -125,12 +126,27 @@ func resourceAmountFromValue(value float64, resource model.ResourceName) model.R
 	return model.ResourceAmount(0)
 }
 
-func getContainerUsageSamplesFromSamples(samples []Sample, resource model.ResourceName) []model.ContainerUsageSample {
+func (p *prometheusHistoryProvider) getContainerUsageSamplesFromSamples(samples []Sample, resource model.ResourceName) []model.ContainerUsageSample {
 	res := make([]model.ContainerUsageSample, 0)
 	for _, sample := range samples {
+		var sampleValue float64
+		if resource == model.ResourceCPU {
+			// for cpu we collected from prometheus
+			// the total amount of seconds on cpu,
+			// to get this comparable with what metrics-server
+			// aggragator provides. We could get rate() directly
+			// from Prometheus but in that case we didn't get a range-vector
+			// so we should add a "fake" timestamp to build a range-vector
+			// with a single sample, basically this would be off-load computation
+			// on prometheus.
+			sampleValue = sample.Value / int64(p.config.HistoryLength.Seconds())
+		} else {
+			sampleValue = sample.Value
+		}
+
 		res = append(res, model.ContainerUsageSample{
 			MeasureStart: sample.Timestamp,
-			Usage:        resourceAmountFromValue(sample.Value, resource),
+			Usage:        resourceAmountFromValue(sampleValue, resource),
 			Resource:     resource})
 	}
 	return res
@@ -146,7 +162,7 @@ func (p *prometheusHistoryProvider) readResourceHistory(res map[model.PodID]*Pod
 		if err != nil {
 			return fmt.Errorf("cannot get container ID from labels: %v", ts.Labels)
 		}
-		newSamples := getContainerUsageSamplesFromSamples(ts.Samples, resource)
+		newSamples := p.getContainerUsageSamplesFromSamples(ts.Samples, resource)
 		podHistory, ok := res[containerID.PodID]
 		if !ok {
 			podHistory = newEmptyHistory()
@@ -190,11 +206,13 @@ func (p *prometheusHistoryProvider) GetClusterHistory() (map[model.PodID]*PodHis
 	podSelector := fmt.Sprintf("job=\"%s\", %s=~\".+\", %s!=\"POD\", %s!=\"\"",
 		p.config.CadvisorMetricsJobName, p.config.CtrPodNameLabel,
 		p.config.CtrNameLabel, p.config.CtrNameLabel)
-	err := p.readResourceHistory(res, fmt.Sprintf("container_cpu_usage_seconds_total{%s}[%s]", podSelector, p.config.HistoryLength), model.ResourceCPU)
+	err := p.readResourceHistory(res, fmt.Sprintf("container_cpu_usage_seconds_total{%s}[%ds]",
+		podSelector, int64(p.config.HistoryLength.Seconds())), model.ResourceCPU)
 	if err != nil {
 		return nil, fmt.Errorf("cannot get usage history: %v", err)
 	}
-	err = p.readResourceHistory(res, fmt.Sprintf("container_memory_usage_bytes{%s}[%s]", podSelector, p.config.HistoryLength), model.ResourceMemory)
+	err = p.readResourceHistory(res, fmt.Sprintf("container_memory_usage_bytes{%s}[%ds]",
+		podSelector, int64(p.config.HistoryLength.Seconds())), model.ResourceMemory)
 	if err != nil {
 		return nil, fmt.Errorf("cannot get usage history: %v", err)
 	}
@@ -203,6 +221,6 @@ func (p *prometheusHistoryProvider) GetClusterHistory() (map[model.PodID]*PodHis
 			sort.Slice(samples, func(i, j int) bool { return samples[i].MeasureStart.Before(samples[j].MeasureStart) })
 		}
 	}
-	p.readLastLabels(res, fmt.Sprintf("%s[%s]", p.config.PodLabelsMetricName, p.config.HistoryLength))
+	p.readLastLabels(res, fmt.Sprintf("%s[%ds]", p.config.PodLabelsMetricName, int64(p.config.HistoryLength.Seconds())))
 	return res, nil
 }
