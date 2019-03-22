@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+// +k8s:deepcopy-gen=package
 
-// ClusterAutoscalerVersion contains version of CA.
-const ClusterAutoscalerVersion = "1.14.0-beta.2"
+// Package v1 contains scheduler API objects.
+package v1 // import "k8s.io/kubernetes/pkg/scheduler/api/v1"

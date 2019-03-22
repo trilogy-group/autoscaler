@@ -1,7 +1,7 @@
-// +build gce
+// +build magnum
 
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,22 +20,22 @@ package builder
 
 import (
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider/gce"
+	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider/magnum"
 	"k8s.io/autoscaler/cluster-autoscaler/config"
 )
 
 // AvailableCloudProviders supported by the cloud provider builder.
 var AvailableCloudProviders = []string{
-	gce.ProviderNameGCE,
+	magnum.ProviderName,
 }
 
-// DefaultCloudProvider is GCE.
-const DefaultCloudProvider = gce.ProviderNameGCE
+// DefaultCloudProvider for OpenStack-only build is OpenStack.
+const DefaultCloudProvider = magnum.ProviderName
 
 func buildCloudProvider(opts config.AutoscalingOptions, do cloudprovider.NodeGroupDiscoveryOptions, rl *cloudprovider.ResourceLimiter) cloudprovider.CloudProvider {
 	switch opts.CloudProviderName {
-	case gce.ProviderNameGCE:
-		return gce.BuildGCE(opts, do, rl)
+	case magnum.ProviderName:
+		return magnum.BuildMagnum(opts, do, rl)
 	}
 
 	return nil
