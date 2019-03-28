@@ -19,7 +19,6 @@ package priority
 import (
 	"fmt"
 	"regexp"
-	"time"
 
 	"gopkg.in/yaml.v2"
 
@@ -28,10 +27,7 @@ import (
 	"k8s.io/autoscaler/cluster-autoscaler/utils/errors"
 
 	apiv1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	v1lister "k8s.io/client-go/listers/core/v1"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog"
 	schedulernodeinfo "k8s.io/kubernetes/pkg/scheduler/nodeinfo"
 )
@@ -54,29 +50,17 @@ type priority struct {
 }
 
 // NewStrategy returns an expansion strategy that picks node groups based on user-defined priorities
-func NewStrategy(namespace string, coreV1RESTClient rest.Interface, stopchannel <-chan struct{},
+func NewStrategy(configMapLister v1lister.ConfigMapNamespaceLister,
 	logRecorder EventRecorder) (expander.Strategy, errors.AutoscalerError) {
 	res := &priority{
-		// configmapNamespace: namespace,
-		// coreV1RESTClient:   coreV1RESTClient,
-		// stopchannel:        stopchannel,
 		logRecorder:      logRecorder,
 		fallbackStrategy: random.NewStrategy(),
-		configMapLister:  getConfigMapLister(coreV1RESTClient, namespace, stopchannel),
+		configMapLister:  configMapLister,
 	}
 	if _, err := res.reloadConfigMap(); err != nil {
 		return nil, errors.ToAutoscalerError(errors.ConfigurationError, err)
 	}
 	return res, nil
-}
-
-func getConfigMapLister(restClient rest.Interface, namespace string, stopchannel <-chan struct{}) v1lister.ConfigMapNamespaceLister {
-	listWatcher := cache.NewListWatchFromClient(restClient, "configmaps", namespace, fields.Everything())
-	store := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
-	lister := v1lister.NewConfigMapLister(store)
-	reflector := cache.NewReflector(listWatcher, &apiv1.ConfigMap{}, store, time.Hour)
-	go reflector.Run(stopchannel)
-	return lister.ConfigMaps(namespace)
 }
 
 func (p *priority) reloadConfigMap() (priorities, error) {

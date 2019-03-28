@@ -17,24 +17,23 @@ limitations under the License.
 package priority
 
 import (
-	"fmt"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 
 	apiv1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/record"
 	schedulernodeinfo "k8s.io/kubernetes/pkg/scheduler/nodeinfo"
 
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
-	"k8s.io/autoscaler/cluster-autoscaler/clusterstate/utils"
 	"k8s.io/autoscaler/cluster-autoscaler/expander"
+	"k8s.io/autoscaler/cluster-autoscaler/utils/kubernetes"
 )
 
 const (
+	testNamespace   = "default"
 	configOKMessage = "Normal PriorityConfigMapReloaded Successfully reloaded priority " +
 		"configuration from configmap."
 	configWarnGroupNotFoundMessage = "Warning PriorityConfigMapNotMatchedGroup Priority expander: node group " +
@@ -89,29 +88,38 @@ var (
 	}
 )
 
-func getStrategyInstance(t *testing.T, config string) (expander.Strategy, chan watch.Event, *testEventRecorder, error) {
-	c := make(chan watch.Event)
-
-	r := newTestRecorder()
-	s, err := NewStrategy(config, c, r)
+func getStrategyInstance(t *testing.T, config string) (expander.Strategy, *testEventRecorder, error) {
+	cm := &apiv1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      PriorityConfigMapName,
+		},
+		Data: map[string]string{
+			ConfigMapKey: config,
+		},
+	}
+	lister, err := kubernetes.NewTestConfigMapLister([]*apiv1.ConfigMap{cm})
 	assert.Nil(t, err)
-	return s, c, r, err
+	r := newTestRecorder()
+	s, err := NewStrategy(lister.ConfigMaps(testNamespace), r)
+	assert.Nil(t, err)
+	return s, r, err
 }
 
 func TestPriorityExpanderCorrecltySelectsSingleMatchingOptionOutOfOne(t *testing.T) {
-	s, _, _, _ := getStrategyInstance(t, config)
+	s, _, _ := getStrategyInstance(t, config)
 	ret := s.BestOption([]expander.Option{eoT2Large}, nil)
 	assert.Equal(t, *ret, eoT2Large)
 }
 
 func TestPriorityExpanderCorrecltySelectsSingleMatchingOptionOutOfMany(t *testing.T) {
-	s, _, _, _ := getStrategyInstance(t, config)
+	s, _, _ := getStrategyInstance(t, config)
 	ret := s.BestOption([]expander.Option{eoT2Large, eoM44XLarge}, nil)
 	assert.Equal(t, *ret, eoM44XLarge)
 }
 
 func TestPriorityExpanderCorrecltySelectsOneOfTwoMatchingOptionsOutOfMany(t *testing.T) {
-	s, _, _, _ := getStrategyInstance(t, config)
+	s, _, _ := getStrategyInstance(t, config)
 	for i := 0; i < 10; i++ {
 		ret := s.BestOption([]expander.Option{eoT2Large, eoT3Large, eoT2Micro}, nil)
 		assert.True(t, ret.NodeGroup.Id() == eoT2Large.NodeGroup.Id() || ret.NodeGroup.Id() == eoT3Large.NodeGroup.Id())
@@ -119,7 +127,7 @@ func TestPriorityExpanderCorrecltySelectsOneOfTwoMatchingOptionsOutOfMany(t *tes
 }
 
 func TestPriorityExpanderCorrecltyFallsBackToRandomWhenNoMatches(t *testing.T) {
-	s, _, _, _ := getStrategyInstance(t, config)
+	s, _, _ := getStrategyInstance(t, config)
 	for i := 0; i < 10; i++ {
 		ret := s.BestOption([]expander.Option{eoT2Large, eoT3Large}, nil)
 		assert.True(t, ret.NodeGroup.Id() == eoT2Large.NodeGroup.Id() || ret.NodeGroup.Id() == eoT3Large.NodeGroup.Id())

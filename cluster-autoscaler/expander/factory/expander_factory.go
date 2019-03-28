@@ -17,6 +17,8 @@ limitations under the License.
 package factory
 
 import (
+	"time"
+
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
 	"k8s.io/autoscaler/cluster-autoscaler/context"
 	"k8s.io/autoscaler/cluster-autoscaler/expander"
@@ -26,7 +28,12 @@ import (
 	"k8s.io/autoscaler/cluster-autoscaler/expander/random"
 	"k8s.io/autoscaler/cluster-autoscaler/expander/waste"
 	"k8s.io/autoscaler/cluster-autoscaler/utils/errors"
+
+	apiv1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	kube_client "k8s.io/client-go/kubernetes"
+	v1lister "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/tools/cache"
 )
 
 // ExpanderStrategyFromString creates an expander.Strategy according to its name
@@ -51,8 +58,14 @@ func ExpanderStrategyFromString(expanderFlag string, cloudProvider cloudprovider
 		// TODO: how to get proper termination info? It seems other listers do the same here
 		// they never receive the termination msg on the ch
 		stopChannel := make(chan struct{})
-		return priority.NewStrategy(configNamespace, kubeClient.CoreV1().RESTClient(),
-			stopChannel, autoscalingKubeClients.LogRecorder)
+		restClient := kubeClient.CoreV1().RESTClient()
+		listWatcher := cache.NewListWatchFromClient(restClient, "configmaps", configNamespace, fields.Everything())
+		store := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+		lister := v1lister.NewConfigMapLister(store)
+		reflector := cache.NewReflector(listWatcher, &apiv1.ConfigMap{}, store, time.Hour)
+		go reflector.Run(stopChannel)
+
+		return priority.NewStrategy(lister.ConfigMaps(configNamespace), autoscalingKubeClients.LogRecorder)
 	}
 	return nil, errors.NewAutoscalerError(errors.InternalError, "Expander %s not supported", expanderFlag)
 }
