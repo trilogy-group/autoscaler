@@ -97,13 +97,11 @@ func (p *priority) logConfigWarning(reason, msg string) {
 
 func (p *priority) parsePrioritiesYAMLString(prioritiesYAML string) (priorities, error) {
 	if prioritiesYAML == "" {
-		p.badConfigUpdates++
 		return nil, fmt.Errorf("priority configuration in %s configmap is empty; please provide valid configuration",
 			PriorityConfigMapName)
 	}
 	var config map[int][]string
 	if err := yaml.Unmarshal([]byte(prioritiesYAML), &config); err != nil {
-		p.badConfigUpdates++
 		return nil, fmt.Errorf("Can't parse YAML with priorities in the configmap: %v", err)
 	}
 
@@ -112,7 +110,6 @@ func (p *priority) parsePrioritiesYAMLString(prioritiesYAML string) (priorities,
 		for _, re := range reList {
 			regexp, err := regexp.Compile(re)
 			if err != nil {
-				p.badConfigUpdates++
 				return nil, fmt.Errorf("Can't compile regexp rule for priority %d and rule %s: %v", prio, re, err)
 			}
 			newPriorities[prio] = append(newPriorities[prio], regexp)

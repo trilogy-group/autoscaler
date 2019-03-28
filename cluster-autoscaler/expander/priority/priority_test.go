@@ -17,6 +17,7 @@ limitations under the License.
 package priority
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,17 +30,19 @@ import (
 
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
 	"k8s.io/autoscaler/cluster-autoscaler/expander"
+	"k8s.io/autoscaler/cluster-autoscaler/utils/errors"
 	"k8s.io/autoscaler/cluster-autoscaler/utils/kubernetes"
 )
 
 const (
-	testNamespace   = "default"
-	configOKMessage = "Normal PriorityConfigMapReloaded Successfully reloaded priority " +
-		"configuration from configmap."
+	testNamespace                  = "default"
 	configWarnGroupNotFoundMessage = "Warning PriorityConfigMapNotMatchedGroup Priority expander: node group " +
 		"%s not found in priority expander configuration. The group won't be used."
-	configWarnConfigMapDeleted = "Warning PriorityConfigMapDeleted Configmap for priority expander was deleted, " +
-		"no updates will be processed until recreated."
+	configWarnConfigMapEmpty = "Warning PriorityConfigMapInvalid Wrong configuration for priority expander: " +
+		"priority configuration in cluster-autoscaler-priority-expander configmap is empty; please provide " +
+		"valid configuration. Ignoring update."
+	configWarnEmptyMsg = "priority configuration in cluster-autoscaler-priority-expander configmap is empty; please provide valid configuration"
+	configWarnParseMsg = "Can't parse YAML with priorities in the configmap"
 )
 
 var (
@@ -88,7 +91,7 @@ var (
 	}
 )
 
-func getStrategyInstance(t *testing.T, config string) (expander.Strategy, *testEventRecorder, error) {
+func getStrategyInstance(t *testing.T, config string) (expander.Strategy, *testEventRecorder, *apiv1.ConfigMap, error) {
 	cm := &apiv1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: testNamespace,
@@ -102,24 +105,23 @@ func getStrategyInstance(t *testing.T, config string) (expander.Strategy, *testE
 	assert.Nil(t, err)
 	r := newTestRecorder()
 	s, err := NewStrategy(lister.ConfigMaps(testNamespace), r)
-	assert.Nil(t, err)
-	return s, r, err
+	return s, r, cm, err
 }
 
 func TestPriorityExpanderCorrecltySelectsSingleMatchingOptionOutOfOne(t *testing.T) {
-	s, _, _ := getStrategyInstance(t, config)
+	s, _, _, _ := getStrategyInstance(t, config)
 	ret := s.BestOption([]expander.Option{eoT2Large}, nil)
 	assert.Equal(t, *ret, eoT2Large)
 }
 
 func TestPriorityExpanderCorrecltySelectsSingleMatchingOptionOutOfMany(t *testing.T) {
-	s, _, _ := getStrategyInstance(t, config)
+	s, _, _, _ := getStrategyInstance(t, config)
 	ret := s.BestOption([]expander.Option{eoT2Large, eoM44XLarge}, nil)
 	assert.Equal(t, *ret, eoM44XLarge)
 }
 
 func TestPriorityExpanderCorrecltySelectsOneOfTwoMatchingOptionsOutOfMany(t *testing.T) {
-	s, _, _ := getStrategyInstance(t, config)
+	s, _, _, _ := getStrategyInstance(t, config)
 	for i := 0; i < 10; i++ {
 		ret := s.BestOption([]expander.Option{eoT2Large, eoT3Large, eoT2Micro}, nil)
 		assert.True(t, ret.NodeGroup.Id() == eoT2Large.NodeGroup.Id() || ret.NodeGroup.Id() == eoT3Large.NodeGroup.Id())
@@ -127,7 +129,7 @@ func TestPriorityExpanderCorrecltySelectsOneOfTwoMatchingOptionsOutOfMany(t *tes
 }
 
 func TestPriorityExpanderCorrecltyFallsBackToRandomWhenNoMatches(t *testing.T) {
-	s, _, _ := getStrategyInstance(t, config)
+	s, _, _, _ := getStrategyInstance(t, config)
 	for i := 0; i < 10; i++ {
 		ret := s.BestOption([]expander.Option{eoT2Large, eoT3Large}, nil)
 		assert.True(t, ret.NodeGroup.Id() == eoT2Large.NodeGroup.Id() || ret.NodeGroup.Id() == eoT3Large.NodeGroup.Id())
@@ -135,79 +137,53 @@ func TestPriorityExpanderCorrecltyFallsBackToRandomWhenNoMatches(t *testing.T) {
 }
 
 func TestPriorityExpanderCorrecltyHandlesConfigUpdate(t *testing.T) {
-	t.Skipf("TODO fix; Fails because of data race")
-	s, c, r, _ := getStrategyInstance(t, oneEntryConfig)
+	s, r, cm, _ := getStrategyInstance(t, oneEntryConfig)
 	ret := s.BestOption([]expander.Option{eoT2Large, eoT3Large, eoM44XLarge}, nil)
 	assert.Equal(t, *ret, eoT2Large)
 
-	event := <-r.recorder.Events
-	assert.EqualValues(t, configOKMessage, event)
+	var event string
 	for _, group := range []string{eoT3Large.NodeGroup.Id(), eoM44XLarge.NodeGroup.Id()} {
 		event = <-r.recorder.Events
 		assert.EqualValues(t, fmt.Sprintf(configWarnGroupNotFoundMessage, group), event)
 	}
 
-	c <- watch.Event{
-		Type: watch.Modified,
-		Object: &apiv1.ConfigMap{
-			Data: map[string]string{
-				ConfigMapKey: config,
-			},
-		},
-	}
-	priority := s.(*priority)
-	for {
-		if priority.okConfigUpdates == 2 {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
+	cm.Data[ConfigMapKey] = config
 	ret = s.BestOption([]expander.Option{eoT2Large, eoT3Large, eoM44XLarge}, nil)
+
+	priority := s.(*priority)
+	assert.Equal(t, 3, priority.okConfigUpdates)
 	assert.Equal(t, *ret, eoM44XLarge)
-	event = <-r.recorder.Events
-	assert.EqualValues(t, configOKMessage, event)
 }
 
 func TestPriorityExpanderCorrecltySkipsBadChangeConfig(t *testing.T) {
-	t.Skipf("TODO fix; Fails because of data race")
-	s, c, r, _ := getStrategyInstance(t, oneEntryConfig)
-
-	event := <-r.recorder.Events
-	assert.EqualValues(t, configOKMessage, event)
-
-	c <- watch.Event{
-		Type:   watch.Deleted,
-		Object: &apiv1.ConfigMap{},
-	}
+	s, r, cm, _ := getStrategyInstance(t, oneEntryConfig)
 	priority := s.(*priority)
-	for {
-		if priority.badConfigUpdates == 1 {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
-
 	assert.Equal(t, 1, priority.okConfigUpdates)
-	event = <-r.recorder.Events
-	assert.EqualValues(t, configWarnConfigMapDeleted, event)
 
+	cm.Data[ConfigMapKey] = ""
 	ret := s.BestOption([]expander.Option{eoT2Large, eoT3Large, eoM44XLarge}, nil)
 
-	assert.Equal(t, *ret, eoT2Large)
-	for _, group := range []string{eoT3Large.NodeGroup.Id(), eoM44XLarge.NodeGroup.Id()} {
-		event = <-r.recorder.Events
-		assert.EqualValues(t, fmt.Sprintf(configWarnGroupNotFoundMessage, group), event)
-	}
+	assert.Equal(t, 1, priority.badConfigUpdates)
+
+	event := <-r.recorder.Events
+	assert.EqualValues(t, configWarnConfigMapEmpty, event)
+	assert.Nil(t, ret)
 }
 
 func TestPriorityExpanderFailsToStartWithEmptyConfig(t *testing.T) {
-	_, err := NewStrategy("", nil, &utils.LogEventRecorder{})
-	assert.NotNil(t, err)
+	_, _, _, err := getStrategyInstance(t, "")
+	ae, ok := err.(errors.AutoscalerError)
+	assert.True(t, ok)
+	assert.Equal(t, errors.ConfigurationError, ae.Type())
+	assert.Equal(t, configWarnEmptyMsg, ae.Error())
 }
 
 func TestPriorityExpanderFailsToStartWithBadConfig(t *testing.T) {
-	_, err := NewStrategy("not_really_yaml: 34 : 43", nil, &utils.LogEventRecorder{})
-	assert.NotNil(t, err)
+	_, _, _, err := getStrategyInstance(t, "this is not a valid: yaml")
+	ae, ok := err.(errors.AutoscalerError)
+	assert.True(t, ok)
+	assert.Equal(t, errors.ConfigurationError, ae.Type())
+	assert.Equal(t, configWarnParseMsg, ae.Error()[:len(configWarnParseMsg)])
 }
 
 type testNodeGroup struct {
