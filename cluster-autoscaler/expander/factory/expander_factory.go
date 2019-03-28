@@ -48,12 +48,11 @@ func ExpanderStrategyFromString(expanderFlag string, cloudProvider cloudprovider
 			price.NewSimplePreferredNodeProvider(autoscalingKubeClients.AllNodeLister()),
 			price.SimpleNodeUnfitness), nil
 	case expander.PriorityBasedExpanderName:
-		maps := kubeClient.CoreV1().ConfigMaps(configNamespace)
-		initialPriorities, priorityChangesChan, err := priority.InitPriorityConfigMap(maps, configNamespace)
-		if err != nil {
-			return nil, errors.ToAutoscalerError(errors.InternalError, err)
-		}
-		return priority.NewStrategy(initialPriorities, priorityChangesChan, autoscalingKubeClients.LogRecorder)
+		// TODO: how to get proper termination info? It seems other listers do the same here
+		// they never receive the termination msg on the ch
+		stopChannel := make(chan struct{})
+		return priority.NewStrategy(configNamespace, kubeClient.CoreV1().RESTClient(),
+			stopChannel, autoscalingKubeClients.LogRecorder)
 	}
 	return nil, errors.NewAutoscalerError(errors.InternalError, "Expander %s not supported", expanderFlag)
 }
