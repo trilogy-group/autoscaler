@@ -26,9 +26,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
-	schedulernodeinfo "k8s.io/kubernetes/pkg/scheduler/nodeinfo"
 
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
+	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider/test"
 	"k8s.io/autoscaler/cluster-autoscaler/expander"
 	"k8s.io/autoscaler/cluster-autoscaler/utils/errors"
 	"k8s.io/autoscaler/cluster-autoscaler/utils/kubernetes"
@@ -66,28 +65,20 @@ var (
   - ".*t\\.large.*"
 `
 	eoT2Micro = expander.Option{
-		Debug: "t2.micro",
-		NodeGroup: &testNodeGroup{
-			id: "my-asg.t2.micro",
-		},
+		Debug:     "t2.micro",
+		NodeGroup: test.NewTestNodeGroup("my-asg.t2.micro", 10, 1, 1, true, false, "t2.micro", nil, nil),
 	}
 	eoT2Large = expander.Option{
-		Debug: "t2.large",
-		NodeGroup: &testNodeGroup{
-			id: "my-asg.t2.large",
-		},
+		Debug:     "t2.large",
+		NodeGroup: test.NewTestNodeGroup("my-asg.t2.large", 10, 1, 1, true, false, "t2.large", nil, nil),
 	}
 	eoT3Large = expander.Option{
-		Debug: "t3.large",
-		NodeGroup: &testNodeGroup{
-			id: "my-asg.t3.large",
-		},
+		Debug:     "t3.large",
+		NodeGroup: test.NewTestNodeGroup("my-asg.t3.large", 10, 1, 1, true, false, "t3.large", nil, nil),
 	}
 	eoM44XLarge = expander.Option{
-		Debug: "m4.4xlarge",
-		NodeGroup: &testNodeGroup{
-			id: "my-asg.m4.4xlarge",
-		},
+		Debug:     "m4.4xlarge",
+		NodeGroup: test.NewTestNodeGroup("my-asg.m4.4xlarge", 10, 1, 1, true, false, "m4.4xlarge", nil, nil),
 	}
 )
 
@@ -184,67 +175,6 @@ func TestPriorityExpanderFailsToStartWithBadConfig(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, errors.ConfigurationError, ae.Type())
 	assert.Equal(t, configWarnParseMsg, ae.Error()[:len(configWarnParseMsg)])
-}
-
-type testNodeGroup struct {
-	id    string
-	debug string
-}
-
-func (t *testNodeGroup) MaxSize() int {
-	return 10
-}
-
-func (t *testNodeGroup) MinSize() int {
-	return 0
-}
-
-func (t *testNodeGroup) TargetSize() (int, error) {
-	return 5, nil
-}
-
-func (t *testNodeGroup) IncreaseSize(delta int) error {
-	return nil
-}
-
-func (t *testNodeGroup) DeleteNodes([]*apiv1.Node) error {
-	return nil
-}
-
-func (t *testNodeGroup) DecreaseTargetSize(delta int) error {
-	return nil
-}
-
-func (t *testNodeGroup) Id() string {
-	return t.id
-}
-
-func (t *testNodeGroup) Debug() string {
-	return t.debug
-}
-
-func (t *testNodeGroup) Nodes() ([]cloudprovider.Instance, error) {
-	return nil, nil
-}
-
-func (t *testNodeGroup) TemplateNodeInfo() (*schedulernodeinfo.NodeInfo, error) {
-	return nil, nil
-}
-
-func (t *testNodeGroup) Exist() bool {
-	return true
-}
-
-func (t *testNodeGroup) Create() (cloudprovider.NodeGroup, error) {
-	return nil, nil
-}
-
-func (t *testNodeGroup) Delete() error {
-	return nil
-}
-
-func (t *testNodeGroup) Autoprovisioned() bool {
-	return false
 }
 
 type testEventRecorder struct {
