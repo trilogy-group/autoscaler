@@ -28,6 +28,7 @@ import (
 
 	apiv1 "k8s.io/api/core/v1"
 	v1lister "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog"
 	schedulernodeinfo "k8s.io/kubernetes/pkg/scheduler/nodeinfo"
 )
@@ -42,7 +43,7 @@ const (
 type priorities map[int][]*regexp.Regexp
 
 type priority struct {
-	logRecorder      EventRecorder
+	logRecorder      record.EventRecorder
 	fallbackStrategy expander.Strategy
 	okConfigUpdates  int
 	badConfigUpdates int
@@ -51,46 +52,46 @@ type priority struct {
 
 // NewStrategy returns an expansion strategy that picks node groups based on user-defined priorities
 func NewStrategy(configMapLister v1lister.ConfigMapNamespaceLister,
-	logRecorder EventRecorder) (expander.Strategy, errors.AutoscalerError) {
+	logRecorder record.EventRecorder) (expander.Strategy, errors.AutoscalerError) {
 	res := &priority{
 		logRecorder:      logRecorder,
 		fallbackStrategy: random.NewStrategy(),
 		configMapLister:  configMapLister,
 	}
-	if _, err := res.reloadConfigMap(); err != nil {
+	if _, _, err := res.reloadConfigMap(); err != nil {
 		return nil, errors.ToAutoscalerError(errors.ConfigurationError, err)
 	}
 	return res, nil
 }
 
-func (p *priority) reloadConfigMap() (priorities, error) {
+func (p *priority) reloadConfigMap() (priorities, *apiv1.ConfigMap, error) {
 	cm, err := p.configMapLister.Get(PriorityConfigMapName)
 	if err != nil {
 		msg := fmt.Sprintf("Priority expander config map %s not found: %v", PriorityConfigMapName, err)
-		p.logConfigWarning("PriorityConfigMapNotFound", msg)
-		return nil, err
+		p.logConfigWarning(nil, "PriorityConfigMapNotFound", msg)
+		return nil, nil, err
 	}
 
 	prioString, found := cm.Data[ConfigMapKey]
 	if !found {
 		msg := fmt.Sprintf("Wrong configmap for priority expander, doesn't contain %s key. Ignoring update.",
 			ConfigMapKey)
-		p.logConfigWarning("PriorityConfigMapInvalid", msg)
-		return nil, fmt.Errorf("%s", msg)
+		p.logConfigWarning(cm, "PriorityConfigMapInvalid", msg)
+		return nil, cm, fmt.Errorf("%s", msg)
 	}
 
 	newPriorities, err := p.parsePrioritiesYAMLString(prioString)
 	if err != nil {
 		msg := fmt.Sprintf("Wrong configuration for priority expander: %v. Ignoring update.", err)
-		p.logConfigWarning("PriorityConfigMapInvalid", msg)
-		return nil, err
+		p.logConfigWarning(cm, "PriorityConfigMapInvalid", msg)
+		return nil, cm, err
 	}
 
-	return newPriorities, nil
+	return newPriorities, cm, nil
 }
 
-func (p *priority) logConfigWarning(reason, msg string) {
-	p.logRecorder.Event(apiv1.EventTypeWarning, reason, msg)
+func (p *priority) logConfigWarning(cm *apiv1.ConfigMap, reason, msg string) {
+	p.logRecorder.Event(cm, apiv1.EventTypeWarning, reason, msg)
 	klog.Warning(msg)
 	p.badConfigUpdates++
 }
@@ -128,7 +129,7 @@ func (p *priority) BestOption(expansionOptions []expander.Option, nodeInfo map[s
 		return nil
 	}
 
-	priorities, err := p.reloadConfigMap()
+	priorities, cm, err := p.reloadConfigMap()
 	if err != nil {
 		return nil
 	}
@@ -156,13 +157,13 @@ func (p *priority) BestOption(expansionOptions []expander.Option, nodeInfo map[s
 		if !found {
 			msg := fmt.Sprintf("Priority expander: node group %s not found in priority expander configuration. "+
 				"The group won't be used.", id)
-			p.logConfigWarning("PriorityConfigMapNotMatchedGroup", msg)
+			p.logConfigWarning(cm, "PriorityConfigMapNotMatchedGroup", msg)
 		}
 	}
 
 	if len(best) == 0 {
 		msg := "Priority expander: no priorities info found for any of the expansion options. Falling back to random choice."
-		p.logConfigWarning("PriorityConfigMapNoGroupMatched", msg)
+		p.logConfigWarning(cm, "PriorityConfigMapNoGroupMatched", msg)
 		return p.fallbackStrategy.BestOption(expansionOptions, nodeInfo)
 	}
 
@@ -176,14 +177,4 @@ func (p *priority) groupIDMatchesList(id string, nameRegexpList []*regexp.Regexp
 		}
 	}
 	return false
-}
-
-// EventRecorder is an interface to abstract kubernetes event recording.
-type EventRecorder interface {
-	// Event records a new event of given type, reason and description given with message.
-	Event(eventtype, reason, message string)
-
-	// Events records a new event of given type, reason and description given with message,
-	// which can be formatted using args.
-	Eventf(eventtype, reason, message string, args ...interface{})
 }

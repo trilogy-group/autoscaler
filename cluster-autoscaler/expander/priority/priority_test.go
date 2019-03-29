@@ -24,7 +24,6 @@ import (
 
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider/test"
@@ -82,7 +81,7 @@ var (
 	}
 )
 
-func getStrategyInstance(t *testing.T, config string) (expander.Strategy, *testEventRecorder, *apiv1.ConfigMap, error) {
+func getStrategyInstance(t *testing.T, config string) (expander.Strategy, *record.FakeRecorder, *apiv1.ConfigMap, error) {
 	cm := &apiv1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: testNamespace,
@@ -94,7 +93,7 @@ func getStrategyInstance(t *testing.T, config string) (expander.Strategy, *testE
 	}
 	lister, err := kubernetes.NewTestConfigMapLister([]*apiv1.ConfigMap{cm})
 	assert.Nil(t, err)
-	r := newTestRecorder()
+	r := record.NewFakeRecorder(100)
 	s, err := NewStrategy(lister.ConfigMaps(testNamespace), r)
 	return s, r, cm, err
 }
@@ -134,7 +133,7 @@ func TestPriorityExpanderCorrecltyHandlesConfigUpdate(t *testing.T) {
 
 	var event string
 	for _, group := range []string{eoT3Large.NodeGroup.Id(), eoM44XLarge.NodeGroup.Id()} {
-		event = <-r.recorder.Events
+		event = <-r.Events
 		assert.EqualValues(t, fmt.Sprintf(configWarnGroupNotFoundMessage, group), event)
 	}
 
@@ -156,7 +155,7 @@ func TestPriorityExpanderCorrecltySkipsBadChangeConfig(t *testing.T) {
 
 	assert.Equal(t, 1, priority.badConfigUpdates)
 
-	event := <-r.recorder.Events
+	event := <-r.Events
 	assert.EqualValues(t, configWarnConfigMapEmpty, event)
 	assert.Nil(t, ret)
 }
@@ -175,24 +174,4 @@ func TestPriorityExpanderFailsToStartWithBadConfig(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, errors.ConfigurationError, ae.Type())
 	assert.Equal(t, configWarnParseMsg, ae.Error()[:len(configWarnParseMsg)])
-}
-
-type testEventRecorder struct {
-	recorder     *record.FakeRecorder
-	statusObject runtime.Object
-}
-
-func newTestRecorder() *testEventRecorder {
-	return &testEventRecorder{
-		recorder:     record.NewFakeRecorder(100),
-		statusObject: &apiv1.ConfigMap{},
-	}
-}
-
-func (ler *testEventRecorder) Event(eventtype, reason, message string) {
-	ler.recorder.Event(ler.statusObject, eventtype, reason, message)
-}
-
-func (ler *testEventRecorder) Eventf(eventtype, reason, message string, args ...interface{}) {
-	ler.recorder.Eventf(ler.statusObject, eventtype, reason, message, args...)
 }
