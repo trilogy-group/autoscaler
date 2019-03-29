@@ -17,6 +17,7 @@ limitations under the License.
 package priority
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 
@@ -24,7 +25,7 @@ import (
 
 	"k8s.io/autoscaler/cluster-autoscaler/expander"
 	"k8s.io/autoscaler/cluster-autoscaler/expander/random"
-	"k8s.io/autoscaler/cluster-autoscaler/utils/errors"
+	caserrors "k8s.io/autoscaler/cluster-autoscaler/utils/errors"
 
 	apiv1 "k8s.io/api/core/v1"
 	v1lister "k8s.io/client-go/listers/core/v1"
@@ -52,14 +53,14 @@ type priority struct {
 
 // NewStrategy returns an expansion strategy that picks node groups based on user-defined priorities
 func NewStrategy(configMapLister v1lister.ConfigMapNamespaceLister,
-	logRecorder record.EventRecorder) (expander.Strategy, errors.AutoscalerError) {
+	logRecorder record.EventRecorder) (expander.Strategy, caserrors.AutoscalerError) {
 	res := &priority{
 		logRecorder:      logRecorder,
 		fallbackStrategy: random.NewStrategy(),
 		configMapLister:  configMapLister,
 	}
 	if _, _, err := res.reloadConfigMap(); err != nil {
-		return nil, errors.ToAutoscalerError(errors.ConfigurationError, err)
+		return nil, caserrors.ToAutoscalerError(caserrors.ConfigurationError, err)
 	}
 	return res, nil
 }
@@ -67,9 +68,7 @@ func NewStrategy(configMapLister v1lister.ConfigMapNamespaceLister,
 func (p *priority) reloadConfigMap() (priorities, *apiv1.ConfigMap, error) {
 	cm, err := p.configMapLister.Get(PriorityConfigMapName)
 	if err != nil {
-		msg := fmt.Sprintf("Priority expander config map %s not found: %v", PriorityConfigMapName, err)
-		p.logConfigWarning(nil, "PriorityConfigMapNotFound", msg)
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("Priority expander config map %s not found: %v", PriorityConfigMapName, err)
 	}
 
 	prioString, found := cm.Data[ConfigMapKey]
@@ -77,7 +76,7 @@ func (p *priority) reloadConfigMap() (priorities, *apiv1.ConfigMap, error) {
 		msg := fmt.Sprintf("Wrong configmap for priority expander, doesn't contain %s key. Ignoring update.",
 			ConfigMapKey)
 		p.logConfigWarning(cm, "PriorityConfigMapInvalid", msg)
-		return nil, cm, fmt.Errorf("%s", msg)
+		return nil, cm, errors.New(msg)
 	}
 
 	newPriorities, err := p.parsePrioritiesYAMLString(prioString)

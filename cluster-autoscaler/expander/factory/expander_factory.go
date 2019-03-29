@@ -58,14 +58,27 @@ func ExpanderStrategyFromString(expanderFlag string, cloudProvider cloudprovider
 		// TODO: how to get proper termination info? It seems other listers do the same here
 		// they never receive the termination msg on the ch
 		stopChannel := make(chan struct{})
-		restClient := kubeClient.CoreV1().RESTClient()
-		listWatcher := cache.NewListWatchFromClient(restClient, "configmaps", configNamespace, fields.Everything())
-		store := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
-		lister := v1lister.NewConfigMapLister(store)
-		reflector := cache.NewReflector(listWatcher, &apiv1.ConfigMap{}, store, time.Hour)
-		go reflector.Run(stopChannel)
-
-		return priority.NewStrategy(lister.ConfigMaps(configNamespace), autoscalingKubeClients.LogRecorder)
+		lister := getPriorityExpandersConfigMapLister(kubeClient, stopChannel, configNamespace)
+		return priority.NewStrategy(lister.ConfigMaps(configNamespace), autoscalingKubeClients.Recorder)
 	}
 	return nil, errors.NewAutoscalerError(errors.InternalError, "Expander %s not supported", expanderFlag)
+}
+
+func getPriorityExpandersConfigMapLister(kubeClient kube_client.Interface, stopChannel <-chan struct{},
+	namespace string) v1lister.ConfigMapLister {
+	// FIXME: how to be sure the reflector completed at least one run and switch to the line below?
+	// return kubernetes.NewConfigMapListerForNamespace(kubeClient, stopChannel, namespace)
+
+	listWatcher := cache.NewListWatchFromClient(kubeClient.CoreV1().RESTClient(), "configmaps", namespace, fields.Everything())
+	store := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	lister := v1lister.NewConfigMapLister(store)
+	reflector := cache.NewReflector(listWatcher, &apiv1.ConfigMap{}, store, time.Hour)
+	go reflector.Run(stopChannel)
+	for {
+		if reflector.LastSyncResourceVersion() != "" {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return lister
 }
