@@ -364,7 +364,7 @@ func NewStatefulSetLister(kubeClient client.Interface, stopchannel <-chan struct
 // NewConfigMapListerForNamespace builds a configmap lister for the passed namespace (including all).
 func NewConfigMapListerForNamespace(kubeClient client.Interface, stopchannel <-chan struct{},
 	namespace string) v1lister.ConfigMapLister {
-	listWatcher := cache.NewListWatchFromClient(kubeClient.AppsV1().RESTClient(), "configmaps", namespace, fields.Everything())
+	listWatcher := cache.NewListWatchFromClient(kubeClient.CoreV1().RESTClient(), "configmaps", namespace, fields.Everything())
 	store := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 	lister := v1lister.NewConfigMapLister(store)
 	reflector := cache.NewReflector(listWatcher, &apiv1.ConfigMap{}, store, time.Hour)
