@@ -17,8 +17,6 @@ limitations under the License.
 package factory
 
 import (
-	"time"
-
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
 	"k8s.io/autoscaler/cluster-autoscaler/context"
 	"k8s.io/autoscaler/cluster-autoscaler/expander"
@@ -28,12 +26,9 @@ import (
 	"k8s.io/autoscaler/cluster-autoscaler/expander/random"
 	"k8s.io/autoscaler/cluster-autoscaler/expander/waste"
 	"k8s.io/autoscaler/cluster-autoscaler/utils/errors"
+	"k8s.io/autoscaler/cluster-autoscaler/utils/kubernetes"
 
-	apiv1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	kube_client "k8s.io/client-go/kubernetes"
-	v1lister "k8s.io/client-go/listers/core/v1"
-	"k8s.io/client-go/tools/cache"
 )
 
 // ExpanderStrategyFromString creates an expander.Strategy according to its name
@@ -55,30 +50,11 @@ func ExpanderStrategyFromString(expanderFlag string, cloudProvider cloudprovider
 			price.NewSimplePreferredNodeProvider(autoscalingKubeClients.AllNodeLister()),
 			price.SimpleNodeUnfitness), nil
 	case expander.PriorityBasedExpanderName:
-		// TODO: how to get proper termination info? It seems other listers do the same here
-		// they never receive the termination msg on the ch
+		// It seems other listers do the same here - they never receive the termination msg on the ch.
+		// This should be currently OK.
 		stopChannel := make(chan struct{})
-		lister := getPriorityExpandersConfigMapLister(kubeClient, stopChannel, configNamespace)
+		lister := kubernetes.NewConfigMapListerForNamespace(kubeClient, stopChannel, configNamespace)
 		return priority.NewStrategy(lister.ConfigMaps(configNamespace), autoscalingKubeClients.Recorder)
 	}
 	return nil, errors.NewAutoscalerError(errors.InternalError, "Expander %s not supported", expanderFlag)
-}
-
-func getPriorityExpandersConfigMapLister(kubeClient kube_client.Interface, stopChannel <-chan struct{},
-	namespace string) v1lister.ConfigMapLister {
-	// FIXME: how to be sure the reflector completed at least one run and switch to the line below?
-	// return kubernetes.NewConfigMapListerForNamespace(kubeClient, stopChannel, namespace)
-
-	listWatcher := cache.NewListWatchFromClient(kubeClient.CoreV1().RESTClient(), "configmaps", namespace, fields.Everything())
-	store := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
-	lister := v1lister.NewConfigMapLister(store)
-	reflector := cache.NewReflector(listWatcher, &apiv1.ConfigMap{}, store, time.Hour)
-	go reflector.Run(stopChannel)
-	for {
-		if reflector.LastSyncResourceVersion() != "" {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
-	return lister
 }

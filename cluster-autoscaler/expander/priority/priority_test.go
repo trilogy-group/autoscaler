@@ -28,7 +28,6 @@ import (
 
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider/test"
 	"k8s.io/autoscaler/cluster-autoscaler/expander"
-	"k8s.io/autoscaler/cluster-autoscaler/utils/errors"
 	"k8s.io/autoscaler/cluster-autoscaler/utils/kubernetes"
 )
 
@@ -141,14 +140,14 @@ func TestPriorityExpanderCorrecltyHandlesConfigUpdate(t *testing.T) {
 	ret = s.BestOption([]expander.Option{eoT2Large, eoT3Large, eoM44XLarge}, nil)
 
 	priority := s.(*priority)
-	assert.Equal(t, 3, priority.okConfigUpdates)
+	assert.Equal(t, 2, priority.okConfigUpdates)
 	assert.Equal(t, *ret, eoM44XLarge)
 }
 
 func TestPriorityExpanderCorrecltySkipsBadChangeConfig(t *testing.T) {
 	s, r, cm, _ := getStrategyInstance(t, oneEntryConfig)
 	priority := s.(*priority)
-	assert.Equal(t, 1, priority.okConfigUpdates)
+	assert.Equal(t, 0, priority.okConfigUpdates)
 
 	cm.Data[ConfigMapKey] = ""
 	ret := s.BestOption([]expander.Option{eoT2Large, eoT3Large, eoM44XLarge}, nil)
@@ -158,20 +157,4 @@ func TestPriorityExpanderCorrecltySkipsBadChangeConfig(t *testing.T) {
 	event := <-r.Events
 	assert.EqualValues(t, configWarnConfigMapEmpty, event)
 	assert.Nil(t, ret)
-}
-
-func TestPriorityExpanderFailsToStartWithEmptyConfig(t *testing.T) {
-	_, _, _, err := getStrategyInstance(t, "")
-	ae, ok := err.(errors.AutoscalerError)
-	assert.True(t, ok)
-	assert.Equal(t, errors.ConfigurationError, ae.Type())
-	assert.Equal(t, configWarnEmptyMsg, ae.Error())
-}
-
-func TestPriorityExpanderFailsToStartWithBadConfig(t *testing.T) {
-	_, _, _, err := getStrategyInstance(t, "this is not a valid: yaml")
-	ae, ok := err.(errors.AutoscalerError)
-	assert.True(t, ok)
-	assert.Equal(t, errors.ConfigurationError, ae.Type())
-	assert.Equal(t, configWarnParseMsg, ae.Error()[:len(configWarnParseMsg)])
 }

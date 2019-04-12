@@ -59,9 +59,6 @@ func NewStrategy(configMapLister v1lister.ConfigMapNamespaceLister,
 		fallbackStrategy: random.NewStrategy(),
 		configMapLister:  configMapLister,
 	}
-	if _, _, err := res.reloadConfigMap(); err != nil {
-		return nil, caserrors.ToAutoscalerError(caserrors.ConfigurationError, err)
-	}
 	return res, nil
 }
 
