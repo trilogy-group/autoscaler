@@ -163,6 +163,9 @@ func (p *priority) BestOption(expansionOptions []expander.Option, nodeInfo map[s
 		return p.fallbackStrategy.BestOption(expansionOptions, nodeInfo)
 	}
 
+	for _, opt := range best {
+		klog.V(2).Infof("priority expander: %s chosen as the highest available", opt.NodeGroup.Id())
+	}
 	return p.fallbackStrategy.BestOption(best, nodeInfo)
 }
 
