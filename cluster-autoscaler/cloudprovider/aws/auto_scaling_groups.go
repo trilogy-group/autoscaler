@@ -199,6 +199,10 @@ func (m *asgCache) SetAsgSize(asg *asg, size int) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
+	return m.setAsgSizeNoLock(asg, size)
+}
+
+func (m *asgCache) setAsgSizeNoLock(asg *asg, size int) error {
 	params := &autoscaling.SetDesiredCapacityInput{
 		AutoScalingGroupName: aws.String(asg.Name),
 		DesiredCapacity:      aws.Int64(int64(size)),
@@ -216,8 +220,8 @@ func (m *asgCache) SetAsgSize(asg *asg, size int) error {
 	return nil
 }
 
-func (m *asgCache) decreaseAsgSizeByOne(asg *asg) error {
-	return m.SetAsgSize(asg, asg.curSize-1)
+func (m *asgCache) decreaseAsgSizeByOneNoLock(asg *asg) error {
+	return m.setAsgSizeNoLock(asg, asg.curSize-1)
 }
 
 // DeleteInstances deletes the given instances. All instances must be controlled by the same ASG.
@@ -253,7 +257,7 @@ func (m *asgCache) DeleteInstances(instances []*AwsInstanceRef) error {
 		if err == nil && matched {
 			klog.V(4).Infof("instance %s is detected as a placeholder, decreasing ASG requested size instead "+
 				"of deleting instance", instance.Name)
-			m.decreaseAsgSizeByOne(commonAsg)
+			m.decreaseAsgSizeByOneNoLock(commonAsg)
 			wasPlaceholderDeleted = true
 		} else {
 			params := &autoscaling.TerminateInstanceInAutoScalingGroupInput{
