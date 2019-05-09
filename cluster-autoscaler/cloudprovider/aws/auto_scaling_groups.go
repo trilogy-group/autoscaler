@@ -19,6 +19,7 @@ package aws
 import (
 	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -30,7 +31,10 @@ import (
 	"k8s.io/klog"
 )
 
-const scaleToZeroSupported = true
+const (
+	scaleToZeroSupported          = true
+	placeholderInstanceNamePrefix = "i-placeholder-"
+)
 
 type asgCache struct {
 	registeredAsgs []*asg
@@ -212,6 +216,10 @@ func (m *asgCache) SetAsgSize(asg *asg, size int) error {
 	return nil
 }
 
+func (m *asgCache) decreaseAsgSizeByOne(asg *asg) error {
+	return m.SetAsgSize(asg, asg.curSize-1)
+}
+
 // DeleteInstances deletes the given instances. All instances must be controlled by the same ASG.
 func (m *asgCache) DeleteInstances(instances []*AwsInstanceRef) error {
 	m.mutex.Lock()
@@ -238,22 +246,36 @@ func (m *asgCache) DeleteInstances(instances []*AwsInstanceRef) error {
 		}
 	}
 
+	wasPlaceholderDeleted := false
 	for _, instance := range instances {
-		params := &autoscaling.TerminateInstanceInAutoScalingGroupInput{
-			InstanceId:                     aws.String(instance.Name),
-			ShouldDecrementDesiredCapacity: aws.Bool(true),
-		}
-		resp, err := m.service.TerminateInstanceInAutoScalingGroup(params)
-		if err != nil {
-			return err
+		// check if the instance is a placeholder - skip real AWS API call in that case
+		matched, err := regexp.MatchString(fmt.Sprintf("^%s\\d+$", placeholderInstanceNamePrefix), instance.Name)
+		if err == nil && matched {
+			klog.V(4).Infof("instance %s is detected as a placeholder, decreasing ASG requested size instead "+
+				"of deleting instance", instance.Name)
+			m.decreaseAsgSizeByOne(commonAsg)
+			wasPlaceholderDeleted = true
+		} else {
+			params := &autoscaling.TerminateInstanceInAutoScalingGroupInput{
+				InstanceId:                     aws.String(instance.Name),
+				ShouldDecrementDesiredCapacity: aws.Bool(true),
+			}
+			resp, err := m.service.TerminateInstanceInAutoScalingGroup(params)
+			if err != nil {
+				return err
+			}
+			klog.V(4).Infof(*resp.Activity.Description)
 		}
 
 		// Proactively decrement the size so autoscaler makes better decisions
 		commonAsg.curSize--
-
-		klog.V(4).Infof(*resp.Activity.Description)
 	}
 
+	if wasPlaceholderDeleted {
+		return &cloudprovider.PlaceholderDeleteError{
+			NodeGroupId: commonAsg.Name,
+		}
+	}
 	return nil
 }
 
@@ -323,6 +345,11 @@ func (m *asgCache) regenerate() error {
 		return err
 	}
 
+	// If currently any ASG has more Desired than running Instances, introduce placeholders
+	// for the instances to come up. This is required to track Desired instances that
+	// will never come up, like with Spot Request that can't be fulfilled
+	groups = m.createPlaceholdersForDesiredNonStartedInstances(groups)
+
 	// Register or update ASGs
 	exists := make(map[AwsRef]bool)
 	for _, group := range groups {
@@ -353,6 +380,27 @@ func (m *asgCache) regenerate() error {
 	m.asgToInstances = newAsgToInstancesCache
 	m.instanceToAsg = newInstanceToAsgCache
 	return nil
+}
+
+func (m *asgCache) createPlaceholdersForDesiredNonStartedInstances(groups []*autoscaling.Group) []*autoscaling.Group {
+	for _, g := range groups {
+		desired := *g.DesiredCapacity
+		real := int64(len(g.Instances))
+		if desired <= real {
+			continue
+		}
+
+		for i := real; i < desired; i++ {
+			id := fmt.Sprintf("%s%d", placeholderInstanceNamePrefix, i)
+			klog.V(4).Infof("Instance group %s has only %d instances created while requested count is %d."+
+				"Creating placeholder instance with ID %s", *g.AutoScalingGroupName, real, desired, id)
+			g.Instances = append(g.Instances, &autoscaling.Instance{
+				InstanceId:       &id,
+				AvailabilityZone: g.AvailabilityZones[0],
+			})
+		}
+	}
+	return groups
 }
 
 func (m *asgCache) buildAsgFromAWS(g *autoscaling.Group) (*asg, error) {

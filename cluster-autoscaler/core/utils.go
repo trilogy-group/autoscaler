@@ -27,7 +27,6 @@ import (
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
 	"k8s.io/autoscaler/cluster-autoscaler/clusterstate"
-	"k8s.io/autoscaler/cluster-autoscaler/clusterstate/utils"
 	"k8s.io/autoscaler/cluster-autoscaler/context"
 	"k8s.io/autoscaler/cluster-autoscaler/metrics"
 	"k8s.io/autoscaler/cluster-autoscaler/simulator"
@@ -386,7 +385,7 @@ func sanitizeTemplateNode(node *apiv1.Node, nodeGroup string) (*apiv1.Node, erro
 
 // Removes unregistered nodes if needed. Returns true if anything was removed and error if such occurred.
 func removeOldUnregisteredNodes(unregisteredNodes []clusterstate.UnregisteredNode, context *context.AutoscalingContext,
-	currentTime time.Time, logRecorder *utils.LogEventRecorder) (bool, error) {
+	clusterStateRegistry *clusterstate.ClusterStateRegistry, currentTime time.Time) (bool, error) {
 	removedAny := false
 	for _, unregisteredNode := range unregisteredNodes {
 		if unregisteredNode.UnregisteredSince.Add(context.MaxNodeProvisionTime).Before(currentTime) {
@@ -411,12 +410,18 @@ func removeOldUnregisteredNodes(unregisteredNodes []clusterstate.UnregisteredNod
 			}
 			err = nodeGroup.DeleteNodes([]*apiv1.Node{unregisteredNode.Node})
 			if err != nil {
+				_, wasPlaceholder := err.(*cloudprovider.PlaceholderDeleteError)
+				if wasPlaceholder {
+					klog.Warningf("Timeout trying to scale node group %s")
+					clusterStateRegistry.RegisterFailedScaleUp(nodeGroup, metrics.Timeout, time.Now())
+				} else {
 				klog.Warningf("Failed to remove node %s: %v", unregisteredNode.Node.Name, err)
-				logRecorder.Eventf(apiv1.EventTypeWarning, "DeleteUnregisteredFailed",
+				context.LogRecorder.Eventf(apiv1.EventTypeWarning, "DeleteUnregisteredFailed",
 					"Failed to remove node %s: %v", unregisteredNode.Node.Name, err)
 				return removedAny, err
+				}
 			}
-			logRecorder.Eventf(apiv1.EventTypeNormal, "DeleteUnregistered",
+			context.LogRecorder.Eventf(apiv1.EventTypeNormal, "DeleteUnregistered",
 				"Removed unregistered node %v", unregisteredNode.Node.Name)
 			removedAny = true
 		}
