@@ -41,7 +41,7 @@ import (
 
 const (
 	// MaxNodeStartupTime is the maximum time from the moment the node is registered to the time the node is ready.
-	MaxNodeStartupTime = 15 * time.Minute
+	MaxNodeStartupTime = 2 * time.Minute
 
 	// MaxStatusSettingDelayAfterCreation is the maximum time for node to set its initial status after the
 	// node is registered.
@@ -276,9 +276,14 @@ func (csr *ClusterStateRegistry) updateScaleRequests(currentTime time.Time) {
 
 // To be executed under a lock.
 func (csr *ClusterStateRegistry) backoffNodeGroup(nodeGroup cloudprovider.NodeGroup, errorClass cloudprovider.InstanceErrorClass, errorCode string, currentTime time.Time) {
-	nodeGroupInfo := csr.nodeInfosForGroups[nodeGroup.Id()]
-	backoffUntil := csr.backoff.Backoff(nodeGroup, nodeGroupInfo, errorClass, errorCode, currentTime)
-	klog.Warningf("Disabling scale-up for node group %v until %v; errorClass=%v; errorCode=%v", nodeGroup.Id(), backoffUntil, errorClass, errorCode)
+	csr.backoffNodeGroupByID(nodeGroup.Id(), errorClass, errorCode, currentTime)
+}
+
+// To be executed under a lock.
+func (csr *ClusterStateRegistry) backoffNodeGroupByID(nodeGroupID string, errorClass cloudprovider.InstanceErrorClass, errorCode string, currentTime time.Time) {
+	nodeGroupInfo := csr.nodeInfosForGroups[nodeGroupID]
+	backoffUntil := csr.backoff.BackoffByID(nodeGroupID, nodeGroupInfo, errorClass, errorCode, currentTime)
+	klog.Warningf("Disabling scale-up for node group %v until %v; errorClass=%v; errorCode=%v", nodeGroupID, backoffUntil, errorClass, errorCode)
 }
 
 // RegisterFailedScaleUp should be called after getting error from cloudprovider
@@ -294,6 +299,17 @@ func (csr *ClusterStateRegistry) registerFailedScaleUpNoLock(nodeGroup cloudprov
 	csr.scaleUpFailures[nodeGroup.Id()] = append(csr.scaleUpFailures[nodeGroup.Id()], ScaleUpFailure{NodeGroup: nodeGroup, Reason: reason, Time: currentTime})
 	metrics.RegisterFailedScaleUp(reason)
 	csr.backoffNodeGroup(nodeGroup, errorClass, errorCode, currentTime)
+}
+
+// RegisterFailedScaleUpByID should be called after getting error from cloudprovider
+// when trying to scale-up a node group with specified ID. It will mark this group as not safe to autoscale
+// for some time.
+func (csr *ClusterStateRegistry) RegisterFailedScaleUpByID(nodeGroupID string, reason metrics.FailedScaleUpReason, currentTime time.Time) {
+	csr.Lock()
+	defer csr.Unlock()
+
+	metrics.RegisterFailedScaleUp(reason)
+	csr.backoffNodeGroupByID(nodeGroupID, cloudprovider.OtherErrorClass, "cloudProviderError", currentTime)
 }
 
 // UpdateNodes updates the state of the nodes in the ClusterStateRegistry and recalculates the stats

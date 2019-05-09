@@ -69,6 +69,9 @@ type CloudProvider interface {
 	// Refresh is called before every main loop and can be used to dynamically update cloud provider state.
 	// In particular the list of node groups returned by NodeGroups can change as a result of CloudProvider.Refresh().
 	Refresh() error
+
+	// SetClusterStateRegistry sets a cCSR to be later used (if needed) by the CloudProvider
+	// SetClusterStateFeedback(feedback cloudproviderfeedback.NodeGroupFeedback)
 }
 
 // ErrNotImplemented is returned if a method is not implemented.
@@ -246,4 +249,12 @@ func ContainsGpuResources(resources []string) bool {
 		}
 	}
 	return false
+}
+
+type PlaceholderDeleteError struct {
+	NodeGroupId string
+}
+
+func (p *PlaceholderDeleteError) Error() string {
+	return fmt.Sprintf("some of the nodes in %s group were placeholders", p.NodeGroupId)
 }

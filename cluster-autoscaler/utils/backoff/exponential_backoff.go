@@ -67,9 +67,14 @@ func NewIdBasedExponentialBackoff(initialBackoffDuration time.Duration, maxBacko
 
 // Backoff execution for the given node group. Returns time till execution is backed off.
 func (b *exponentialBackoff) Backoff(nodeGroup cloudprovider.NodeGroup, nodeInfo *schedulernodeinfo.NodeInfo, errorClass cloudprovider.InstanceErrorClass, errorCode string, currentTime time.Time) time.Time {
-	duration := b.initialBackoffDuration
 	key := b.nodeGroupKey(nodeGroup)
-	if backoffInfo, found := b.backoffInfo[key]; found {
+	return b.BackoffByID(key, nodeInfo, errorClass, errorCode, currentTime)
+}
+
+// BackoffByID backoffs execution for the given node group using its ID. Returns time till execution is backed off.
+func (b *exponentialBackoff) BackoffByID(nodeGroupID string, nodeInfo *schedulernodeinfo.NodeInfo, errorClass cloudprovider.InstanceErrorClass, errorCode string, currentTime time.Time) time.Time {
+	duration := b.initialBackoffDuration
+	if backoffInfo, found := b.backoffInfo[nodeGroupID]; found {
 		// Multiple concurrent scale-ups failing shouldn't cause backoff
 		// duration to increase, so we only increase it if we're not in
 		// backoff right now.
@@ -81,7 +86,7 @@ func (b *exponentialBackoff) Backoff(nodeGroup cloudprovider.NodeGroup, nodeInfo
 		}
 	}
 	backoffUntil := currentTime.Add(duration)
-	b.backoffInfo[key] = exponentialBackoffInfo{
+	b.backoffInfo[nodeGroupID] = exponentialBackoffInfo{
 		duration:            duration,
 		backoffUntil:        backoffUntil,
 		lastFailedExecution: currentTime,
