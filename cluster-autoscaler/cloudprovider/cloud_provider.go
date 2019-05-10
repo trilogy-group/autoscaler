@@ -248,6 +248,9 @@ func ContainsGpuResources(resources []string) bool {
 	return false
 }
 
+// PlaceholderDeleteError is returned by delete functions when the delete request was targeting 
+// a placeholder node information, not a real node. This means that no node was deleted,
+// only the related node group was scaled down.
 type PlaceholderDeleteError struct {
 	NodeGroupId string
 }
