@@ -455,7 +455,7 @@ func TestRemoveOldUnregisteredNodes(t *testing.T) {
 	assert.False(t, removed)
 
 	// ng1_2 should be removed.
-	removed, err = removeOldUnregisteredNodes(unregisteredNodes, context, now, clusterState, fakeLogRecorder)
+	removed, err = removeOldUnregisteredNodes(unregisteredNodes, context, clusterState, now, fakeLogRecorder)
 	assert.NoError(t, err)
 	assert.True(t, removed)
 	deletedNode := getStringFromChan(deletedNodes)
