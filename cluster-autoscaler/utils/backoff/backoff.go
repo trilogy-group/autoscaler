@@ -27,8 +27,6 @@ import (
 type Backoff interface {
 	// Backoff execution for the given node group. Returns time till execution is backed off.
 	Backoff(nodeGroup cloudprovider.NodeGroup, nodeInfo *schedulernodeinfo.NodeInfo, errorClass cloudprovider.InstanceErrorClass, errorCode string, currentTime time.Time) time.Time
-	// BackoffByID backoffs execution for the given node group using its ID. Returns time till execution is backed off.
-	BackoffByID(nodeGroupID string, nodeInfo *schedulernodeinfo.NodeInfo, errorClass cloudprovider.InstanceErrorClass, errorCode string, currentTime time.Time) time.Time
 	// IsBackedOff returns true if execution is backed off for the given node group.
 	IsBackedOff(nodeGroup cloudprovider.NodeGroup, nodeInfo *schedulernodeinfo.NodeInfo, currentTime time.Time) bool
 	// RemoveBackoff removes backoff data for the given node group.

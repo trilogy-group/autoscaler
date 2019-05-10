@@ -252,7 +252,8 @@ func (m *asgCache) DeleteInstances(instances []*AwsInstanceRef) error {
 
 	wasPlaceholderDeleted := false
 	for _, instance := range instances {
-		// check if the instance is a placeholder - skip real AWS API call in that case
+		// check if the instance is a placeholder - a requested instance that was never created by the node group
+		// if it is, just decrease the size of the node group, as there's no specific instance we can remove
 		matched, err := regexp.MatchString(fmt.Sprintf("^%s\\d+$", placeholderInstanceNamePrefix), instance.Name)
 		if err == nil && matched {
 			klog.V(4).Infof("instance %s is detected as a placeholder, decreasing ASG requested size instead "+
