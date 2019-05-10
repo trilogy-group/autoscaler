@@ -207,9 +207,18 @@ func TestFetchExplicitAsgs(t *testing.T) {
 		mock.AnythingOfType("func(*autoscaling.DescribeAutoScalingGroupsOutput, bool) bool"),
 	).Run(func(args mock.Arguments) {
 		fn := args.Get(1).(func(*autoscaling.DescribeAutoScalingGroupsOutput, bool) bool)
+		max64 := int64(max-1)
+		min64 := int64(min)
+		zone := "test-1a"
 		fn(&autoscaling.DescribeAutoScalingGroupsOutput{
 			AutoScalingGroups: []*autoscaling.Group{
-				{AutoScalingGroupName: aws.String(groupname)},
+				{
+					AvailabilityZones: []*string{&zone},
+					AutoScalingGroupName: aws.String(groupname),
+					MaxSize: &max64,
+					MinSize: &min64,
+					DesiredCapacity: &min64,
+				},
 			}}, false)
 	}).Return(nil)
 
