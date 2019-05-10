@@ -17,7 +17,6 @@ limitations under the License.
 package cloudprovider
 
 import (
-	"fmt"
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
@@ -235,15 +234,4 @@ func ContainsGpuResources(resources []string) bool {
 		}
 	}
 	return false
-}
-
-// PlaceholderDeleteError is returned by delete functions when the delete request was targeting
-// a placeholder node information, not a real node. This means that no node was deleted,
-// only the related node group was scaled down.
-type PlaceholderDeleteError struct {
-	NodeGroupId string
-}
-
-func (p *PlaceholderDeleteError) Error() string {
-	return fmt.Sprintf("some of the nodes in %s group were placeholders", p.NodeGroupId)
 }

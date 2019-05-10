@@ -250,7 +250,6 @@ func (m *asgCache) DeleteInstances(instances []*AwsInstanceRef) error {
 		}
 	}
 
-	wasPlaceholderDeleted := false
 	for _, instance := range instances {
 		// check if the instance is a placeholder - a requested instance that was never created by the node group
 		// if it is, just decrease the size of the node group, as there's no specific instance we can remove
@@ -258,8 +257,7 @@ func (m *asgCache) DeleteInstances(instances []*AwsInstanceRef) error {
 		if err == nil && matched {
 			klog.V(4).Infof("instance %s is detected as a placeholder, decreasing ASG requested size instead "+
 				"of deleting instance", instance.Name)
-			m.decreaseAsgSizeByOneNoLock(commonAsg)
-			wasPlaceholderDeleted = true
+			// m.decreaseAsgSizeByOneNoLock(commonAsg)
 		} else {
 			params := &autoscaling.TerminateInstanceInAutoScalingGroupInput{
 				InstanceId:                     aws.String(instance.Name),
@@ -276,11 +274,6 @@ func (m *asgCache) DeleteInstances(instances []*AwsInstanceRef) error {
 		commonAsg.curSize--
 	}
 
-	if wasPlaceholderDeleted {
-		return &cloudprovider.PlaceholderDeleteError{
-			NodeGroupId: commonAsg.Name,
-		}
-	}
 	return nil
 }
 

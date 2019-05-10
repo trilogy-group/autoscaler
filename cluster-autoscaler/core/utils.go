@@ -386,7 +386,7 @@ func sanitizeTemplateNode(node *apiv1.Node, nodeGroup string) (*apiv1.Node, erro
 
 // Removes unregistered nodes if needed. Returns true if anything was removed and error if such occurred.
 func removeOldUnregisteredNodes(unregisteredNodes []clusterstate.UnregisteredNode, context *context.AutoscalingContext,
-	clusterStateRegistry *clusterstate.ClusterStateRegistry, currentTime time.Time, logRecorder *utils.LogEventRecorder) (bool, error) {
+	currentTime time.Time, logRecorder *utils.LogEventRecorder) (bool, error) {
 	removedAny := false
 	for _, unregisteredNode := range unregisteredNodes {
 		if unregisteredNode.UnregisteredSince.Add(context.MaxNodeProvisionTime).Before(currentTime) {
@@ -411,20 +411,10 @@ func removeOldUnregisteredNodes(unregisteredNodes []clusterstate.UnregisteredNod
 			}
 			err = nodeGroup.DeleteNodes([]*apiv1.Node{unregisteredNode.Node})
 			if err != nil {
-				_, wasPlaceholder := err.(*cloudprovider.PlaceholderDeleteError)
-				// this means only a placeholder instance was deleted - it is an instance, that was requested,
-				// but was not create before StartUpTimeout. It means something's wrong with this specific
-				// node group and we temporarily suspend requesting new instances from it by registering
-				// a failed scale up
-				if wasPlaceholder {
-					klog.Warningf("Timeout trying to scale node group %s, enabling backoff for the group", nodeGroup.Id())
-					clusterStateRegistry.RegisterFailedScaleUp(nodeGroup, metrics.Timeout, time.Now())
-				} else {
-					klog.Warningf("Failed to remove node %s: %v", unregisteredNode.Node.Name, err)
-					logRecorder.Eventf(apiv1.EventTypeWarning, "DeleteUnregisteredFailed",
-						"Failed to remove node %s: %v", unregisteredNode.Node.Name, err)
-					return removedAny, err
-				}
+				klog.Warningf("Failed to remove node %s: %v", unregisteredNode.Node.Name, err)
+				logRecorder.Eventf(apiv1.EventTypeWarning, "DeleteUnregisteredFailed",
+					"Failed to remove node %s: %v", unregisteredNode.Node.Name, err)
+				return removedAny, err
 			}
 			logRecorder.Eventf(apiv1.EventTypeNormal, "DeleteUnregistered",
 				"Removed unregistered node %v", unregisteredNode.Node.Name)
