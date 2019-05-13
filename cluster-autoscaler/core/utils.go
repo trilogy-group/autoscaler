@@ -516,7 +516,7 @@ func removeOldUnregisteredNodes(unregisteredNodes []clusterstate.UnregisteredNod
 				// a failed scale up
 				if wasPlaceholder {
 					klog.Warningf("Timeout trying to scale node group %s, enabling backoff for the group", nodeGroup.Id())
-					clusterStateRegistry.RegisterFailedScaleUp(nodeGroup, metrics.Timeout, time.Now())
+					clusterStateRegistry.BackoffNodeGroup(nodeGroup, time.Now())
 				} else {
 					klog.Warningf("Failed to remove node %s: %v", unregisteredNode.Node.Name, err)
 					logRecorder.Eventf(apiv1.EventTypeWarning, "DeleteUnregisteredFailed",
