@@ -257,7 +257,7 @@ func (m *asgCache) DeleteInstances(instances []*AwsInstanceRef) error {
 		if err == nil && matched {
 			klog.V(4).Infof("instance %s is detected as a placeholder, decreasing ASG requested size instead "+
 				"of deleting instance", instance.Name)
-			// m.decreaseAsgSizeByOneNoLock(commonAsg)
+			m.decreaseAsgSizeByOneNoLock(commonAsg)
 		} else {
 			params := &autoscaling.TerminateInstanceInAutoScalingGroupInput{
 				InstanceId:                     aws.String(instance.Name),
