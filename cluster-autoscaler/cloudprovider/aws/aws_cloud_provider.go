@@ -316,10 +316,10 @@ func (ng *AwsNodeGroup) Nodes() ([]cloudprovider.Instance, error) {
 		// check if the instance is a placeholder that failed to start within timeout
 		// if yes, set InstanceStatus accordingly
 		if asgNode.Name == TimeoutedPlaceholderName {
-			instances[i].Status = &cloudprovider.InstanceStatus {
+			instances[i].Status = &cloudprovider.InstanceStatus{
 				State: cloudprovider.InstanceCreating,
-				ErrorInfo: &cloudprovider.InstanceErrorInfo {
-					ErrorClass: cloudprovider.OutOfResourcesErrorClass,
+				ErrorInfo: &cloudprovider.InstanceErrorInfo{
+					ErrorClass:   cloudprovider.OutOfResourcesErrorClass,
 					ErrorMessage: "instance failed to start in the ASG within timeout",
 				},
 			}

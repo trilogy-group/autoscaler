@@ -417,7 +417,7 @@ func removeOldUnregisteredNodes(unregisteredNodes []clusterstate.UnregisteredNod
 				return removedAny, err
 			}
 
-			failedPlaceholder, err := anyPlaceholderInstanceStartupFailed(nodeGroup) 
+			failedPlaceholder, err := anyPlaceholderInstanceStartupFailed(nodeGroup)
 			if err != nil {
 				return removedAny, err
 			}
@@ -429,7 +429,7 @@ func removeOldUnregisteredNodes(unregisteredNodes []clusterstate.UnregisteredNod
 				klog.Warningf("Timeout trying to scale node group %s, enabling backoff for the group", nodeGroup.Id())
 				clusterStateRegistry.BackoffNodeGroup(nodeGroup, time.Now())
 			}
-			
+
 			logRecorder.Eventf(apiv1.EventTypeNormal, "DeleteUnregistered",
 				"Removed unregistered node %v", unregisteredNode.Node.Name)
 			removedAny = true
@@ -441,13 +441,13 @@ func removeOldUnregisteredNodes(unregisteredNodes []clusterstate.UnregisteredNod
 // anyPlaceholderInstanceStartupFailed returns true, if any placeholder instance in the nodeGroup
 // failed to start before timeout was triggered
 func anyPlaceholderInstanceStartupFailed(nodeGroup cloudprovider.NodeGroup) (bool, error) {
-	nodes, err := nodeGroup.Nodes() 
+	nodes, err := nodeGroup.Nodes()
 	if err != nil {
 		return false, err
 	}
 	for _, node := range nodes {
 		if node.Status != nil && node.Status.State == cloudprovider.InstanceCreating &&
-		node.Status.ErrorInfo != nil && node.Status.ErrorInfo.ErrorClass == cloudprovider.OutOfResourcesErrorClass {
+			node.Status.ErrorInfo != nil && node.Status.ErrorInfo.ErrorClass == cloudprovider.OutOfResourcesErrorClass {
 			return true, nil
 		}
 	}

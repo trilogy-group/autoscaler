@@ -35,7 +35,7 @@ const (
 	scaleToZeroSupported          = true
 	placeholderInstanceNamePrefix = "i-placeholder-"
 	// TimeoutedPlaceholderName is used to mark placeholder instances that did not come up with timeout
-	TimeoutedPlaceholderName      = "i-timeouted-placeholder"
+	TimeoutedPlaceholderName = "i-timeouted-placeholder"
 )
 
 type asgCache struct {
