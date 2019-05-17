@@ -34,6 +34,8 @@ import (
 const (
 	scaleToZeroSupported          = true
 	placeholderInstanceNamePrefix = "i-placeholder-"
+	// TimeoutedPlaceholderName is used to mark placeholder instances that did not come up with timeout
+	TimeoutedPlaceholderName      = "i-timeouted-placeholder"
 )
 
 type asgCache struct {
@@ -250,7 +252,6 @@ func (m *asgCache) DeleteInstances(instances []*AwsInstanceRef) error {
 		}
 	}
 
-	wasPlaceholderDeleted := false
 	for _, instance := range instances {
 		// check if the instance is a placeholder - a requested instance that was never created by the node group
 		// if it is, just decrease the size of the node group, as there's no specific instance we can remove
@@ -259,7 +260,16 @@ func (m *asgCache) DeleteInstances(instances []*AwsInstanceRef) error {
 			klog.V(4).Infof("instance %s is detected as a placeholder, decreasing ASG requested size instead "+
 				"of deleting instance", instance.Name)
 			m.decreaseAsgSizeByOneNoLock(commonAsg)
-			wasPlaceholderDeleted = true
+			// mark this instance using its name as a timeouted placeholder
+			asg := m.instanceToAsg[*instance]
+			delete(m.instanceToAsg, *instance)
+			instance.Name = TimeoutedPlaceholderName
+			m.instanceToAsg[*instance] = asg
+			for i := range m.asgToInstances[commonAsg.AwsRef] {
+				if m.asgToInstances[commonAsg.AwsRef][i].ProviderID == instance.ProviderID {
+					m.asgToInstances[commonAsg.AwsRef][i].Name = TimeoutedPlaceholderName
+				}
+			}
 		} else {
 			params := &autoscaling.TerminateInstanceInAutoScalingGroupInput{
 				InstanceId:                     aws.String(instance.Name),
@@ -274,12 +284,6 @@ func (m *asgCache) DeleteInstances(instances []*AwsInstanceRef) error {
 
 		// Proactively decrement the size so autoscaler makes better decisions
 		commonAsg.curSize--
-	}
-
-	if wasPlaceholderDeleted {
-		return &cloudprovider.PlaceholderDeleteError{
-			NodeGroupId: commonAsg.Name,
-		}
 	}
 	return nil
 }
