@@ -35,7 +35,7 @@ const (
 	scaleToZeroSupported          = true
 	placeholderInstanceNamePrefix = "i-placeholder-"
 	// TimedoutPlaceholderName is used to mark placeholder instances that did not come up with timeout
-	TimedoutPlaceholderName = "i-timeouted-placeholder"
+	TimedoutPlaceholderName = "i-timedout-placeholder"
 )
 
 type asgCache struct {
@@ -408,7 +408,7 @@ func (m *asgCache) createPlaceholdersForDesiredNonStartedInstances(groups []*aut
 		for i := real; i < desired; i++ {
 			id := fmt.Sprintf("%s%d", placeholderInstanceNamePrefix, i)
 			klog.V(4).Infof("Instance group %s has only %d instances created while requested count is %d. "+
-				"Creating placeholder instance with ID %s", *g.AutoScalingGroupName, real, desired, id)
+				"Creating placeholder instance with ID %s.", *g.AutoScalingGroupName, real, desired, id)
 			g.Instances = append(g.Instances, &autoscaling.Instance{
 				InstanceId:       &id,
 				AvailabilityZone: g.AvailabilityZones[0],
