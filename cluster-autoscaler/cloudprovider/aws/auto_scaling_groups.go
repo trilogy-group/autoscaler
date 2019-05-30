@@ -34,17 +34,18 @@ import (
 const (
 	scaleToZeroSupported          = true
 	placeholderInstanceNamePrefix = "i-placeholder-"
-	// TimeoutedPlaceholderName is used to mark placeholder instances that did not come up with timeout
-	TimeoutedPlaceholderName = "i-timeouted-placeholder"
+	// TimedoutPlaceholderName is used to mark placeholder instances that did not come up with timeout
+	TimedoutPlaceholderName = "i-timeouted-placeholder"
 )
 
 type asgCache struct {
-	registeredAsgs []*asg
-	asgToInstances map[AwsRef][]AwsInstanceRef
-	instanceToAsg  map[AwsInstanceRef]*asg
-	mutex          sync.Mutex
-	service        autoScalingWrapper
-	interrupt      chan struct{}
+	registeredAsgs     []*asg
+	asgToInstances     map[AwsRef][]AwsInstanceRef
+	instanceToAsg      map[AwsInstanceRef]*asg
+	mutex              sync.Mutex
+	service            autoScalingWrapper
+	interrupt          chan struct{}
+	placeholderRegexpr *regexp.Regexp
 
 	asgAutoDiscoverySpecs []cloudprovider.ASGAutoDiscoveryConfig
 	explicitlyConfigured  map[AwsRef]bool
@@ -73,6 +74,7 @@ func newASGCache(service autoScalingWrapper, explicitSpecs []string, autoDiscove
 		interrupt:             make(chan struct{}),
 		asgAutoDiscoverySpecs: autoDiscoverySpecs,
 		explicitlyConfigured:  make(map[AwsRef]bool),
+		placeholderRegexpr:    regexp.MustCompile(fmt.Sprintf("^%s\\d+$", placeholderInstanceNamePrefix)),
 	}
 
 	if err := registry.parseExplicitAsgs(explicitSpecs); err != nil {
@@ -255,19 +257,18 @@ func (m *asgCache) DeleteInstances(instances []*AwsInstanceRef) error {
 	for _, instance := range instances {
 		// check if the instance is a placeholder - a requested instance that was never created by the node group
 		// if it is, just decrease the size of the node group, as there's no specific instance we can remove
-		matched, err := regexp.MatchString(fmt.Sprintf("^%s\\d+$", placeholderInstanceNamePrefix), instance.Name)
-		if err == nil && matched {
+		if m.isPlaceholderInstance(instance) {
 			klog.V(4).Infof("instance %s is detected as a placeholder, decreasing ASG requested size instead "+
 				"of deleting instance", instance.Name)
 			m.decreaseAsgSizeByOneNoLock(commonAsg)
-			// mark this instance using its name as a timeouted placeholder
+			// mark this instance using its name as a timed out placeholder
 			asg := m.instanceToAsg[*instance]
 			delete(m.instanceToAsg, *instance)
-			instance.Name = TimeoutedPlaceholderName
+			instance.Name = TimedoutPlaceholderName
 			m.instanceToAsg[*instance] = asg
 			for i := range m.asgToInstances[commonAsg.AwsRef] {
 				if m.asgToInstances[commonAsg.AwsRef][i].ProviderID == instance.ProviderID {
-					m.asgToInstances[commonAsg.AwsRef][i].Name = TimeoutedPlaceholderName
+					m.asgToInstances[commonAsg.AwsRef][i].Name = TimedoutPlaceholderName
 				}
 			}
 		} else {
@@ -286,6 +287,11 @@ func (m *asgCache) DeleteInstances(instances []*AwsInstanceRef) error {
 		commonAsg.curSize--
 	}
 	return nil
+}
+
+// isPlaceholderInstance checks if the given instance is only a placeholder
+func (m *asgCache) isPlaceholderInstance(instance *AwsInstanceRef) bool {
+	return m.placeholderRegexpr.MatchString(instance.Name)
 }
 
 // Fetch automatically discovered ASGs. These ASGs should be unregistered if
@@ -401,7 +407,7 @@ func (m *asgCache) createPlaceholdersForDesiredNonStartedInstances(groups []*aut
 
 		for i := real; i < desired; i++ {
 			id := fmt.Sprintf("%s%d", placeholderInstanceNamePrefix, i)
-			klog.V(4).Infof("Instance group %s has only %d instances created while requested count is %d."+
+			klog.V(4).Infof("Instance group %s has only %d instances created while requested count is %d. "+
 				"Creating placeholder instance with ID %s", *g.AutoScalingGroupName, real, desired, id)
 			g.Instances = append(g.Instances, &autoscaling.Instance{
 				InstanceId:       &id,

@@ -521,7 +521,7 @@ func removeOldUnregisteredNodes(unregisteredNodes []clusterstate.UnregisteredNod
 			}
 			if failedPlaceholder {
 				// this means only a placeholder instance was deleted - it is an instance, that was requested,
-				// but was not create before StartUpTimeout. It means something's wrong with this specific
+				// but was not created before StartUpTimeout. It means something's wrong with this specific
 				// node group and we temporarily suspend requesting new instances from it by registering
 				// a failed scale up
 				klog.Warningf("Timeout trying to scale node group %s, enabling backoff for the group", nodeGroup.Id())
