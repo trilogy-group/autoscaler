@@ -515,41 +515,12 @@ func removeOldUnregisteredNodes(unregisteredNodes []clusterstate.UnregisteredNod
 				return removedAny, err
 			}
 
-			failedPlaceholder, err := anyPlaceholderInstanceStartupFailed(nodeGroup)
-			if err != nil {
-				return removedAny, err
-			}
-			if failedPlaceholder {
-				// this means only a placeholder instance was deleted - it is an instance, that was requested,
-				// but was not created before StartUpTimeout. It means something's wrong with this specific
-				// node group and we temporarily suspend requesting new instances from it by registering
-				// a failed scale up
-				klog.Warningf("Timeout trying to scale node group %s, enabling backoff for the group", nodeGroup.Id())
-				clusterStateRegistry.BackoffNodeGroup(nodeGroup, time.Now())
-			}
-
 			logRecorder.Eventf(apiv1.EventTypeNormal, "DeleteUnregistered",
 				"Removed unregistered node %v", unregisteredNode.Node.Name)
 			removedAny = true
 		}
 	}
 	return removedAny, nil
-}
-
-// anyPlaceholderInstanceStartupFailed returns true, if any placeholder instance in the nodeGroup
-// failed to start before timeout was triggered
-func anyPlaceholderInstanceStartupFailed(nodeGroup cloudprovider.NodeGroup) (bool, error) {
-	nodes, err := nodeGroup.Nodes()
-	if err != nil {
-		return false, err
-	}
-	for _, node := range nodes {
-		if node.Status != nil && node.Status.State == cloudprovider.InstanceCreating &&
-			node.Status.ErrorInfo != nil && node.Status.ErrorInfo.ErrorClass == cloudprovider.OutOfResourcesErrorClass {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 // Sets the target size of node groups to the current number of nodes in them

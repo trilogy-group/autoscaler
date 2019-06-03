@@ -34,8 +34,10 @@ import (
 const (
 	scaleToZeroSupported          = true
 	placeholderInstanceNamePrefix = "i-placeholder-"
-	// TimedoutPlaceholderName is used to mark placeholder instances that did not come up with timeout
-	TimedoutPlaceholderName = "i-timedout-placeholder"
+)
+
+var (
+	once sync.Once
 )
 
 type asgCache struct {
@@ -45,7 +47,6 @@ type asgCache struct {
 	mutex              sync.Mutex
 	service            autoScalingWrapper
 	interrupt          chan struct{}
-	placeholderRegexpr *regexp.Regexp
 
 	asgAutoDiscoverySpecs []cloudprovider.ASGAutoDiscoveryConfig
 	explicitlyConfigured  map[AwsRef]bool
@@ -74,7 +75,6 @@ func newASGCache(service autoScalingWrapper, explicitSpecs []string, autoDiscove
 		interrupt:             make(chan struct{}),
 		asgAutoDiscoverySpecs: autoDiscoverySpecs,
 		explicitlyConfigured:  make(map[AwsRef]bool),
-		placeholderRegexpr:    regexp.MustCompile(fmt.Sprintf("^%s\\d+$", placeholderInstanceNamePrefix)),
 	}
 
 	if err := registry.parseExplicitAsgs(explicitSpecs); err != nil {
@@ -261,16 +261,6 @@ func (m *asgCache) DeleteInstances(instances []*AwsInstanceRef) error {
 			klog.V(4).Infof("instance %s is detected as a placeholder, decreasing ASG requested size instead "+
 				"of deleting instance", instance.Name)
 			m.decreaseAsgSizeByOneNoLock(commonAsg)
-			// mark this instance using its name as a timed out placeholder
-			asg := m.instanceToAsg[*instance]
-			delete(m.instanceToAsg, *instance)
-			instance.Name = TimedoutPlaceholderName
-			m.instanceToAsg[*instance] = asg
-			for i := range m.asgToInstances[commonAsg.AwsRef] {
-				if m.asgToInstances[commonAsg.AwsRef][i].ProviderID == instance.ProviderID {
-					m.asgToInstances[commonAsg.AwsRef][i].Name = TimedoutPlaceholderName
-				}
-			}
 		} else {
 			params := &autoscaling.TerminateInstanceInAutoScalingGroupInput{
 				InstanceId:                     aws.String(instance.Name),
@@ -291,7 +281,8 @@ func (m *asgCache) DeleteInstances(instances []*AwsInstanceRef) error {
 
 // isPlaceholderInstance checks if the given instance is only a placeholder
 func (m *asgCache) isPlaceholderInstance(instance *AwsInstanceRef) bool {
-	return m.placeholderRegexpr.MatchString(instance.Name)
+	matched, _ := regexp.MatchString(fmt.Sprintf("^%s\\d+$", placeholderInstanceNamePrefix), instance.Name)
+	return matched
 }
 
 // Fetch automatically discovered ASGs. These ASGs should be unregistered if
