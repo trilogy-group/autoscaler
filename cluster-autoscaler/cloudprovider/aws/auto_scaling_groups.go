@@ -41,12 +41,12 @@ var (
 )
 
 type asgCache struct {
-	registeredAsgs     []*asg
-	asgToInstances     map[AwsRef][]AwsInstanceRef
-	instanceToAsg      map[AwsInstanceRef]*asg
-	mutex              sync.Mutex
-	service            autoScalingWrapper
-	interrupt          chan struct{}
+	registeredAsgs []*asg
+	asgToInstances map[AwsRef][]AwsInstanceRef
+	instanceToAsg  map[AwsInstanceRef]*asg
+	mutex          sync.Mutex
+	service        autoScalingWrapper
+	interrupt      chan struct{}
 
 	asgAutoDiscoverySpecs []cloudprovider.ASGAutoDiscoveryConfig
 	explicitlyConfigured  map[AwsRef]bool
