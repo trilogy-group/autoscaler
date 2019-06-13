@@ -36,10 +36,6 @@ const (
 	placeholderInstanceNamePrefix = "i-placeholder-"
 )
 
-var (
-	once sync.Once
-)
-
 type asgCache struct {
 	registeredAsgs []*asg
 	asgToInstances map[AwsRef][]AwsInstanceRef
