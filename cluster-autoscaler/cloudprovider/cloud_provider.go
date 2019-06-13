@@ -17,6 +17,7 @@ limitations under the License.
 package cloudprovider
 
 import (
+	"fmt"
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
