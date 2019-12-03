@@ -152,6 +152,23 @@ func (tcp *TestCloudProvider) NewNodeGroup(machineType string, labels map[string
 	}, nil
 }
 
+// NewTestNodeGroup creates a TestNodeGroup without setting up the realted TestCloudProvider.
+// Useful for testing only.
+func NewTestNodeGroup(id string, maxSize, minSize, targetSize int, exist, autoprovisioned bool,
+	machineType string, labels map[string]string, taints []apiv1.Taint) *TestNodeGroup {
+	return &TestNodeGroup{
+		id:              id,
+		maxSize:         maxSize,
+		minSize:         minSize,
+		targetSize:      targetSize,
+		exist:           exist,
+		autoprovisioned: autoprovisioned,
+		machineType:     machineType,
+		labels:          labels,
+		taints:          taints,
+	}
+}
+
 // InsertNodeGroup adds already created node group to test cloud provider.
 func (tcp *TestCloudProvider) InsertNodeGroup(nodeGroup cloudprovider.NodeGroup) {
 	tcp.Lock()
